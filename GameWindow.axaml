@@ -1,0 +1,28 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        x:Class="TicTacToe.GameWindow"
+        Title="TicTacToe">
+        
+        <Grid>
+                <UniformGrid>
+                        <Button x:Name="Cell0" Click="Cell_OnClick" />
+                        <Button x:Name="Cell1" Click="Cell_OnClick" />
+                        <Button x:Name="Cell2" Click="Cell_OnClick" />
+                        <Button x:Name="Cell3" Click="Cell_OnClick" />
+                        <Button x:Name="Cell4" Click="Cell_OnClick" />
+                        <Button x:Name="Cell5" Click="Cell_OnClick" />
+                        <Button x:Name="Cell6" Click="Cell_OnClick" />
+                        <Button x:Name="Cell7" Click="Cell_OnClick" />
+                        <Button x:Name="Cell8" Click="Cell_OnClick" />
+                </UniformGrid>
+                
+                <StackPanel>
+                        <TextBlock x:Name="StatusText" Text="Player X's turn" Margin="5" />
+                        <TextBlock x:Name="TurnText" Margin="5" />
+                </StackPanel>
+        </Grid>
+        
+</Window>
