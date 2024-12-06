@@ -12,10 +12,9 @@ public partial class GameWindow : Window
 {
     private readonly string _connectionString = $"server=46.40.3.35; user=33bakos; database = 33bakos_tictactoe";
     private readonly string _playerId;
-    private string _gameCode;
-    private int _gameId;
-    private string _currentPlayer;
+    private readonly string _gameCode;
     private string _playerRole;
+    private int _gameId;
     private bool _gameOver;
     
     public GameWindow(string gameCode, string playerId)
@@ -34,7 +33,7 @@ public partial class GameWindow : Window
             connection.Open();
 
             var command = new MySqlCommand(
-                    "SELECT GameId, Player1, Player2 FROM Games WHERE GameCode = @gameCode AND IsActive = TRUE",
+                    "SELECT GameId, Player1, Player2, CurrentTurn, IsActive FROM Games WHERE GameCode = @gameCode AND IsActive = TRUE",
                     connection);
             command.Parameters.AddWithValue("@gameCode", _gameCode);
 
@@ -44,22 +43,18 @@ public partial class GameWindow : Window
                 {
                     _gameId = reader.GetInt32(0);
                     string player1 = reader.GetString(1);
-                    string? player2 = reader.IsDBNull(2) ? null : reader.GetString(2);
+                    string player2 = reader.IsDBNull(2) ? null : reader.GetString(2);
+                    string currentTurn = reader.GetString(3);
+                    _gameOver = !reader.GetBoolean(4);
 
-                    if (player1 == _playerId)
-                    {
-                        _playerRole = "Player1";
-                        _currentPlayer = "X";
-                    }
-                    else if (player2 == _playerId)
-                    {
-                        _playerRole = "Player2";
-                        _currentPlayer = "O";
-                    }
-                    else
+                    _playerRole = _playerId == player1 ? "Player1" : "Player2";
+
+                    if (_playerRole == "Player2" && player2 != _playerId)
                     {
                         throw new Exception("You are not part of this game");
                     }
+                    
+                    Title = $"Tic Tac Toe - {_playerRole}";
                 }
                 else
                 {
@@ -67,8 +62,6 @@ public partial class GameWindow : Window
                 }
             }
         }
-
-        Title = $"Tic Tac Toe - {_playerRole}";
     }
 
     private async void StartAutoRefresh()
@@ -86,12 +79,10 @@ public partial class GameWindow : Window
         {
             connection.Open();
 
-            var command = new MySqlCommand(
-                "SELECT CellIndex, Player FROM Moves Where GameId = @gameId ORDER BY MoveTime",
-                connection);
-            command.Parameters.AddWithValue("@gameId", _gameId);
+            var movesCommand = new MySqlCommand("SELECT CellIndex, Player FROM Moves Where GameId = @gameId ORDER BY MoveTime", connection);
+            movesCommand.Parameters.AddWithValue("@gameId", _gameId);
 
-            using (var reader = command.ExecuteReader())
+            using (var reader = movesCommand.ExecuteReader())
             {
                 while (reader.Read())
                 {
@@ -104,6 +95,20 @@ public partial class GameWindow : Window
                         cell.Content = player;
                         cell.IsEnabled = false;
                     }
+                }
+            }
+
+            var gameStateCommand = new MySqlCommand("SELECT CurrentTurn, IsActive FROM Games WHERE GameId = @gameId", connection);
+            gameStateCommand.Parameters.AddWithValue("@gameId", _gameId);
+
+            using (var reader = gameStateCommand.ExecuteReader())
+            {
+                if (reader.Read())
+                {
+                    string currentTurn = reader.GetString(0);
+                    _gameOver = !reader.GetBoolean(1);
+                    
+                    TurnText.Text = _gameOver ? "Game Over" : (currentTurn == _playerRole ? "It's your turn" : "Waiting for opponent");
                 }
             }
         }
@@ -119,6 +124,7 @@ public partial class GameWindow : Window
         {
             _gameOver = true;
             UpdateGameStatus(false);
+            TurnText.Text = "Draw";
         }
     }
 
@@ -137,9 +143,9 @@ public partial class GameWindow : Window
 
         for (int i = 0; i < winningCombinations.GetLength(0); i++)
         {
-            if (board[winningCombinations[i, 0]] == _currentPlayer &&
-                board[winningCombinations[i, 1]] == _currentPlayer &&
-                board[winningCombinations[i, 2]] == _currentPlayer)
+            if (!string.IsNullOrEmpty(board[winningCombinations[i, 0]]) &&
+                board[winningCombinations[i, 0]] == board[winningCombinations[i, 1]] &&
+                board[winningCombinations[i, 1]] == board[winningCombinations[i, 2]])
             {
                 return true;
             }
@@ -185,26 +191,45 @@ public partial class GameWindow : Window
         {
             int cellIndex = int.Parse(button.Name.Substring(4));
 
-            SaveMove(cellIndex);
+            using (var connection = new MySqlConnection(_connectionString))
+            {
+                connection.Open();
+
+                var checkCellCommand = new MySqlCommand("SELECT Player FROM Moves WHERE GameId = @gameId AND CellIndex = @cellIndex", connection);
+                checkCellCommand.Parameters.AddWithValue("@gameId", _gameId);
+                checkCellCommand.Parameters.AddWithValue("@cellIndex", cellIndex);
+                
+                var existingMove = checkCellCommand.ExecuteScalar()?.ToString();
+                if (!string.IsNullOrEmpty(existingMove))
+                {
+                    return;
+                }
+                
+                var turnCommand = new MySqlCommand("SELECT CurrentTurn FROM Games WHERE GameId = @gameId", connection);
+                turnCommand.Parameters.AddWithValue("@gameId", _gameId);
+                string currentTurn = turnCommand.ExecuteScalar()?.ToString();
+
+                if (currentTurn != _playerRole)
+                {
+                    TurnText.Text = "Not your turn";
+                    return;
+                }
+                
+                var moveCommand = new MySqlCommand("INSERT INTO Moves (GameId, Player, CellIndex) VALUES (@gameId, @player, @cellIndex)",
+                    connection);
+                moveCommand.Parameters.AddWithValue("@gameId", _gameId);
+                moveCommand.Parameters.AddWithValue("@player", _playerRole);
+                moveCommand.Parameters.AddWithValue("@cellIndex", cellIndex);
+                moveCommand.ExecuteNonQuery();
+                
+                var nextTurn = _playerRole == "Player1" ? "Player2" : "Player1";
+                var updateTurnCommand = new MySqlCommand("UPDATE Games SET CurrentTurn = @nextTurn WHERE GameId = @gameId", connection);
+                updateTurnCommand.Parameters.AddWithValue("@nextTurn", nextTurn);
+                updateTurnCommand.Parameters.AddWithValue("@gameId", _gameId);
+                updateTurnCommand.ExecuteNonQuery();
+            }
             
             RefreshBoard();
         }
-    }
-
-    private void SaveMove(int cellIndex)
-    {
-        using (var connection = new MySqlConnection(_connectionString))
-        {
-            var command = new MySqlCommand(
-                "INSERT INTO Moves (GameId, Player, CellIndex) VALUES (@gameId, @player, @cellIndex)",
-                connection);
-            command.Parameters.AddWithValue("@gameId", _gameId);
-            command.Parameters.AddWithValue("@player", _currentPlayer);
-            command.Parameters.AddWithValue("@cellIndex", cellIndex);
-            connection.Open();
-            command.ExecuteNonQuery();
-        }
-
-        _currentPlayer = _currentPlayer == "X" ? "O" : "X"; //switch the turns
     }
 }

@@ -39,12 +39,15 @@ public partial class MainWindow : Window
                     connection);
                 command.Parameters.AddWithValue("@gameCode", gameCode);
 
+                int gameId;
+                string? player2 = null;
+
                 using (var reader = command.ExecuteReader())
                 {
                     if (reader.Read())
                     {
-                        int gameId = reader.GetInt32(0);
-                        string? player2 = reader.IsDBNull(1) ? null : reader.GetString(1);
+                        gameId = reader.GetInt32(0);
+                        player2 = reader.IsDBNull(1) ? null : reader.GetString(1);
 
                         if (player2 != null)
                         {
@@ -58,7 +61,8 @@ public partial class MainWindow : Window
                     else
                     {
                         //create game and join as p1
-                        CreateNewGame(gameCode);
+                        reader.Close();
+                        gameId = CreateNewGame(gameCode, connection);
                     }
                 }
             }
@@ -73,18 +77,13 @@ public partial class MainWindow : Window
         }
     }
 
-    private void CreateNewGame(string gameCode)
+    private int CreateNewGame(string gameCode, MySqlConnection connection)
     {
-        using (var connection = new MySqlConnection(connectionString))
-        {
-            var command = new MySqlCommand(
-                "INSERT INTO Games (GameCode, Player1) VALUES (@gameCode, @playerName)",
-                connection);
-            command.Parameters.AddWithValue("@gameCode", gameCode);
-            command.Parameters.AddWithValue("@playerName", playerId);
-            connection.Open();
-            command.ExecuteNonQuery();
-        }
+        var command = new MySqlCommand("INSERT INTO Games (GameCode, Player1) VALUES (@gameCode, @playerName)", connection);
+        command.Parameters.AddWithValue("@gameCode", gameCode); 
+        command.Parameters.AddWithValue("@playerName", playerId);
+        
+        return Convert.ToInt32(command.ExecuteScalar());
     }
 
     private void AssignPlayerToGame(int gameId, string playerColumn)
